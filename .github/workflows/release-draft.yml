@@ -1,0 +1,37 @@
+name: Create Release Draft
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to create (e.g. v0.1.0)'
+        required: true
+      section:
+        description: 'Changelog section to use (default: Unreleased)'
+        required: false
+        default: 'Unreleased'
+
+jobs:
+  create-draft:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Extract changelog section
+        id: extract
+        run: |
+          python3 scripts/generate_changelog_section.py --section "${{ inputs.section }}" > release_notes.md
+
+      - name: Create release (draft)
+        uses: actions/create-release@v1
+        with:
+          tag_name: ${{ inputs.tag }}
+          release_name: ${{ inputs.tag }}
+          body_path: release_notes.md
+          draft: true
