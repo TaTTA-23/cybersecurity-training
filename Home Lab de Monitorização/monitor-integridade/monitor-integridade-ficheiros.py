@@ -19,6 +19,8 @@ Uso (exemplos):
 Feito em pt-BR. Mensagens e comentários em português para treino/educação.
 """
 
+from __future__ import annotations
+
 import argparse
 import hashlib
 import hmac
@@ -339,118 +341,6 @@ def main() -> int:
 
     # Exclude the DB file itself from scans (so it doesn't trigger changes)
     exclude = {dbfile}
-
-    # Resolve signing key (if fornecida)
-    key = get_signing_key(base, args.key_file)
-    if args.init:
-        logging.info("Gerando baseline de hashes em %s...", base)
-        scan = scan_directory(base, exclude=exclude)
-        if key:
-            save_signed_hash_db(base, scan, key, filename=dbfile)
-            print(
-                f"Baseline assinado salvo em: {base / dbfile} ({len(scan)} ficheiros)"
-            )
-        else:
-            save_hash_db(base, scan, filename=dbfile)
-            print(f"Baseline salvo em: {base / dbfile} ({len(scan)} ficheiros)")
-        return 0
-
-    # Normal check: load DB and compare once, unless --watch is provided
-    # If key is present, verify signature (if wrapped)
-    if key:
-        ok = verify_signed_db(base, dbfile, key)
-        if not ok:
-            print(
-                f"Assinatura do ficheiro de baseline inválida ou ausente: {base / dbfile}"
-            )
-            return 4
-
-    stored = load_hash_db(base, filename=dbfile)
-    if stored is None:
-        print(
-            f"Nenhuma base de hashes encontrada em {base / dbfile}. Execute --init primeiro para criar a baseline."
-        )
-        return 3
-
-    # Helper to send notifications if configured
-    def notify_if_needed(diffs: Dict[str, list[str]]):
-        if not any(diffs.values()):
-            return
-        payload = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "path": str(base),
-            "diffs": diffs,
-        }
-        if getattr(args, "webhook_url", None):
-            send_webhook(args.webhook_url, payload)
-        if (
-            getattr(args, "smtp_server", None)
-            and getattr(args, "smtp_from", None)
-            and getattr(args, "smtp_to", None)
-        ):
-            hostport = args.smtp_server.split(":")
-            host = hostport[0]
-            port = int(hostport[1]) if len(hostport) > 1 else 25
-            to_addrs = [s.strip() for s in args.smtp_to.split(",") if s.strip()]
-            subject = f"Alerta de integridade: alterações detectadas em {base}"
-            body = json.dumps(payload, indent=2, ensure_ascii=False)
-            send_email(host, port, args.smtp_from, to_addrs, subject, body)
-
-    def single_check() -> Dict[str, list[str]]:
-        current = scan_directory(base, exclude=exclude)
-        diffs = compare_hashes(stored, current)
-        alert_report(base, diffs, stored, current)
-        notify_if_needed(diffs)
-        return diffs
-
-    diffs = single_check()
-
-    if args.watch:
-        print(f"A vigiar {base} a cada {args.interval}s. Ctrl-C para parar.")
-        # If user requested inotify try to use it (optional dependency)
-        if args.use_inotify:
-            try:
-                from inotify_simple import INotify, flags
-
-                inotify = INotify()
-                watch_flags = (
-                    flags.CREATE
-                    | flags.MODIFY
-                    | flags.DELETE
-                    | flags.MOVED_FROM
-                    | flags.MOVED_TO
-                )
-                # Add watches for existing directories (simple recursive setup)
-                for root, dirs, _ in os.walk(base):
-                    try:
-                        inotify.add_watch(root, watch_flags)
-                    except Exception:
-                        logging.debug("Não foi possível adicionar watch a %s", root)
-                print("Usando inotify para detetar alterações (onde disponível)")
-                try:
-                    while True:
-                        for event in inotify.read(timeout=1000):
-                            # Em qualquer evento, executa uma verificação completa
-                            diffs = single_check()
-                except KeyboardInterrupt:
-                    print("Monitor interrompido pelo utilizador.")
-                    return 0
-            except Exception:
-                logging.warning("inotify não disponível, a usar polling com intervalo")
-
-        try:
-            while True:
-                time.sleep(args.interval)
-                diffs = single_check()
-        except KeyboardInterrupt:
-            print("Monitor interrompido pelo utilizador.")
-            return 0
-
-    # Return 0 when no differences, 1 if any detected
-    if any(diffs.values()):
-        return 1
-    return 0
-
 
     # Resolve signing key (if fornecida)
     key = get_signing_key(base, args.key_file)

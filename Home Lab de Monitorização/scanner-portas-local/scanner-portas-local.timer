@@ -1,0 +1,10 @@
+[Unit]
+Description=Run scanner-portas-local service hourly
+
+[Timer]
+# Execute hourly; altere para OnCalendar=daily, OnCalendar=*-*-* 03:00:00, etc.
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target
