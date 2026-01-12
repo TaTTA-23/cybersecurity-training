@@ -26,6 +26,15 @@ import sys
 from pathlib import Path
 from typing import Iterable, Set, Tuple
 
+# Tentativa de import opcional de psutil para ligar portas a processos
+try:
+    import psutil
+
+    HAVE_PSUTIL = True
+except Exception:  # pragma: no cover - import guard
+    psutil = None  # type: ignore
+    HAVE_PSUTIL = False
+
 
 def parse_allowed_file(path: Path) -> Set[int]:
     """Lê o ficheiro de portas permitidas e retorna um set de inteiros.
@@ -93,6 +102,46 @@ def concurrent_scan(host: str, ports: Iterable[int], timeout: float, workers: in
     return sorted(open_ports)
 
 
+def identify_processes_for_ports(ports: Iterable[int], host: str) -> dict[int, tuple[int, str]]:
+    """Se `psutil` estiver disponível, tenta mapear portas para (pid, process_name).
+
+    Retorna um dicionário port -> (pid, process_name). Se não for possível identificar,
+    a porta não aparecerá no dicionário.
+    """
+    mapping: dict[int, tuple[int, str]] = {}
+    if not HAVE_PSUTIL:
+        return mapping
+
+    try:
+        # psutil.net_connections pode requerer privilégios para ver todas as ligações.
+        conns = psutil.net_connections(kind='inet')
+    except Exception:
+        return mapping
+
+    ports_set = set(ports)
+    for c in conns:
+        # c.laddr é (ip, port)
+        try:
+            laddr = c.laddr
+            if not laddr:
+                continue
+            port = getattr(laddr, 'port', None) if hasattr(laddr, 'port') else laddr[1]
+            if port in ports_set and c.status in ('LISTEN', psutil.CONN_LISTEN if hasattr(psutil, 'CONN_LISTEN') else 'LISTEN'):
+                pid = c.pid or 0
+                proc_name = ''
+                try:
+                    if pid:
+                        proc = psutil.Process(pid)
+                        proc_name = proc.name()
+                except Exception:
+                    proc_name = ''
+                mapping[port] = (pid or 0, proc_name or '')
+        except Exception:
+            continue
+
+    return mapping
+
+
 def parse_ports_list(ports_str: str) -> list[int]:
     """Parses comma separated ports and ranges like 22,80,8000-8100"""
     res: Set[int] = set()
@@ -142,15 +191,33 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     print("Portas abertas encontradas:")
+
+    proc_map: dict[int, tuple[int, str]] = {}
+    if args.identify_processes:
+        if not HAVE_PSUTIL:
+            print("Aviso: psutil não disponível — não será possível identificar processos (instale 'psutil').", file=sys.stderr)
+        else:
+            proc_map = identify_processes_for_ports(open_ports, args.host)
+
     for port in open_ports:
         note = "(permitida)" if port in allowed else "(NÃO PERMITIDA)"
-        print(f"  - {port} {note}")
+        if port in proc_map:
+            pid, pname = proc_map[port]
+            proc_info = f"[pid:{pid} name:{pname}]" if pname else f"[pid:{pid}]"
+        else:
+            proc_info = ""
+        print(f"  - {port} {note} {proc_info}")
 
     unexpected = [p for p in open_ports if p not in allowed]
     if unexpected:
         print("\nALERTA: portas inesperadas detectadas! \nResumo:")
         for p in unexpected:
-            print(f"  * Porta {p} está aberta e não consta na lista permitida")
+            if p in proc_map:
+                pid, pname = proc_map[p]
+                pname_str = f" ({pname})" if pname else ""
+                print(f"  * Porta {p} está aberta e não consta na lista permitida — PID {pid}{pname_str}")
+            else:
+                print(f"  * Porta {p} está aberta e não consta na lista permitida")
         print("\nAções recomendadas: verificar serviço em execução, avaliar a necessidade de exposição dessa porta e atualizar a lista permitida se for legítima.")
         return 1
 
