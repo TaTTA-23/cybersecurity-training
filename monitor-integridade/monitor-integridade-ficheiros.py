@@ -19,8 +19,6 @@ Uso (exemplos):
 Feito em pt-BR. Mensagens e comentários em português para treino/educação.
 """
 
-from __future__ import annotations
-
 import argparse
 import hashlib
 import hmac
