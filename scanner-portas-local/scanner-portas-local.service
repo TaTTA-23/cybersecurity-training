@@ -1,0 +1,17 @@
+[Unit]
+Description=Scanner de Portas Local (executa scanner-portas-local)
+After=network.target
+
+[Service]
+Type=oneshot
+Environment=ALLOWED_FILE=/etc/scanner-portas-local/allowed_ports.txt
+Environment=PY_SCRIPT=/usr/local/lib/scanner-portas-local/scanner_portas_local.py
+Environment=OUTPUT_DIR=/var/log/scanner-portas-local
+Environment=PORTS=1-1024
+Environment=HOST=127.0.0.1
+# Ajuste o caminho se instalar em local diferente
+ExecStart=/usr/local/bin/scanner-portas-local-run.sh
+User=root
+
+[Install]
+WantedBy=multi-user.target
