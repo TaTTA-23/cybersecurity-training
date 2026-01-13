@@ -3,3 +3,4 @@ pre-commit
 ruff
 black
 inotify_simple
+psutil
