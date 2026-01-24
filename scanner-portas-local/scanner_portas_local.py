@@ -172,7 +172,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument('--ports', type=str, default='', help='Lista de portas/intervalos (ex: 22,80,8000-8100)')
     p.add_argument('--allowed-file', type=Path, default=Path('allowed_ports.txt'), help='Ficheiro com portas permitidas')
     p.add_argument('--host', type=str, default='127.0.0.1', help='Host a usar para a varredura (por defeito: localhost)')
-    p.add_argument('--timeout', type=float, default=0.25, help='Timeout por tentativa de conexão (segundos)')
+    p.add_argument('--timeout', type=float, default=0.3, help='Timeout por tentativa de conexão (segundos)')
     p.add_argument('--workers', type=int, default=200, help='Número de workers para varredura concorrente')
     p.add_argument('--identify-processes', action='store_true', help='Tentar identificar PID/processo associado a portas (psutil)')
     args = p.parse_args(argv)

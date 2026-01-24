@@ -89,25 +89,38 @@ read_log() {
   fi
 }
 
-# Regex simples para IPv4 e IPv6 (não pretende cobrir 100% dos casos extremos)
+# Regex melhoradas para IPv4 e IPv6
+# IPv4: 4 grupos de 1-3 dígitos
+# IPv6: padrão simplificado que cobre casos comuns em logs SSH
+RE_IPV4='[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}'
+RE_IPV6='[0-9a-fA-F]{0,4}:[0-9a-fA-F]{0,4}(:[0-9a-fA-F]{0,4}){0,6}'
 
-# Padrões simplificados e robustos para IPv4/IPv6 (suficientes para logs SSH)
-RE_IPV4='[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+'
-RE_IPV6='[0-9a-fA-F:]{3,}'
+# Função para extrair IPs de uma linha
+extract_ips() {
+    local line="$1"
+    local ips=""
+    # Extrai IPv4
+    while [[ $line =~ $RE_IPV4 ]]; do
+        ips+="${BASH_REMATCH[0]}"$'\n'
+        line="${line/${BASH_REMATCH[0]}/X}"
+    done
+    # Extrai IPv6
+    while [[ $line =~ $RE_IPV6 ]]; do
+        ips+="${BASH_REMATCH[0]}"$'\n'
+        line="${line/${BASH_REMATCH[0]}/X}"
+    done
+    echo "$ips"
+}
 
 TMP=$(mktemp)
 SORTED=$(mktemp)
 trap 'rm -f "$TMP" "$SORTED"' EXIT
 
-# Filtra linhas de falha SSH
+# Filtra linhas de falha SSH e extrai IPs
 for f in "${FILES[@]}"; do
-  read_log "$f" | grep -E "Failed password|Invalid user|authentication failure" -i | awk '{
-      line = $0
-      while (match(line, /([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)|([0-9a-fA-F:]{3,})/)) {
-        print substr(line, RSTART, RLENGTH)
-        line = substr(line, RSTART + RLENGTH)
-      }
-    }' >> "$TMP" || true
+  while IFS= read -r line; do
+    extract_ips "$line" >> "$TMP"
+  done < <(read_log "$f" | grep -iE "Failed password|Invalid user|authentication failure") || true
 done
 
 # Agrupa e conta ocorrências de todos os ficheiros
